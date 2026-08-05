@@ -1,10 +1,8 @@
 import { Inngest } from "inngest";
 import User from "../models/User.js";
 
-// Create Inngest client
-export const inngest = new Inngest({
-  id: "storygram-app",
-});
+// Create a client to send and receive events
+export const inngest = new Inngest({ id: "storygram-app" });
 
 // =========================
 // Sync User Creation
@@ -15,30 +13,25 @@ const syncUserCreation = inngest.createFunction(
     triggers: [{ event: "clerk/user.created" }],
   },
   async ({ event }) => {
-    const {
-      id,
-      first_name,
-      last_name,
-      email_addresses,
-      image_url,
-    } = event.data;
+    const { id, first_name, last_name, email_addresses, image_url } = event.data;
 
     let username = email_addresses[0].email_address.split("@")[0];
 
-    // Check if username already exists
+    // Check availability of username
     const existingUser = await User.findOne({ username });
-
     if (existingUser) {
       username += Math.floor(Math.random() * 10000);
     }
 
-    await User.create({
+    const userData = {
       _id: id,
       email: email_addresses[0].email_address,
       full_name: `${first_name ?? ""} ${last_name ?? ""}`.trim(),
       profile_picture: image_url,
       username,
-    });
+    };
+
+    await User.create(userData);
   }
 );
 
@@ -51,24 +44,20 @@ const syncUserUpdation = inngest.createFunction(
     triggers: [{ event: "clerk/user.updated" }],
   },
   async ({ event }) => {
-    const {
-      id,
-      first_name,
-      last_name,
-      email_addresses,
-      image_url,
-    } = event.data;
+    const { id, first_name, last_name, email_addresses, image_url } = event.data;
 
-    await User.findByIdAndUpdate(id, {
+    const updatedUserData = {
       email: email_addresses[0].email_address,
       full_name: `${first_name ?? ""} ${last_name ?? ""}`.trim(),
       profile_picture: image_url,
-    });
+    };
+
+    await User.findByIdAndUpdate(id, updatedUserData);
   }
 );
 
 // =========================
-// Sync User Delete
+// Sync User Deletion
 // =========================
 const syncUserDeletion = inngest.createFunction(
   {
@@ -77,14 +66,9 @@ const syncUserDeletion = inngest.createFunction(
   },
   async ({ event }) => {
     const { id } = event.data;
-
     await User.findByIdAndDelete(id);
   }
 );
 
 // Export all functions
-export const functions = [
-  syncUserCreation,
-  syncUserUpdation,
-  syncUserDeletion,
-];
+export const functions = [syncUserCreation, syncUserUpdation, syncUserDeletion];
