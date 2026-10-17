@@ -4,14 +4,6 @@ import Connection from "../models/Connection.js";
 import sendEmail from "../configs/nodeMailer.js";
 
 // Create Inngest client
-export const inngest = new Inngest({
-  id: "storygram-app",
-});
-
-// =========================
-// Sync User Creation
-// =========================
-
 const syncUserCreation = inngest.createFunction(
   {
     id: "sync-user-from-clerk",
@@ -22,85 +14,38 @@ const syncUserCreation = inngest.createFunction(
       id,
       first_name,
       last_name,
-      username: clerkUsername,
-      email_addresses = [],
-      primary_email_address_id,
+      email_addresses,
       image_url,
     } = event.data;
 
-    // Find the primary email address.
-    const email =
-      email_addresses.find(
-        (item) => item.id === primary_email_address_id
-      )?.email_address ||
-      email_addresses[0]?.email_address;
+    const email = email_addresses?.[0]?.email_address;
 
     if (!id || !email) {
-      throw new Error(
-        "Clerk user ID or email address is missing."
-      );
+      throw new Error("Clerk user ID or email address is missing.");
     }
 
-    // Ensure full_name is never empty.
-    const nameFromParts = [first_name, last_name]
-      .filter(
-        (part) => typeof part === "string" && part.trim()
-      )
-      .join(" ")
-      .trim();
+    let username = email.split("@")[0];
 
+    // Check if username already exists
+    const existingUser = await User.findOne({ username });
+
+    if (existingUser) {
+      username += Math.floor(Math.random() * 10000);
+    }
+
+    // Use username if Clerk doesn't provide a full name
     const full_name =
-      nameFromParts ||
-      (typeof clerkUsername === "string"
-        ? clerkUsername.trim()
-        : "") ||
-      email.split("@")[0] ||
-      "StoryGram User";
+      `${first_name ?? ""} ${last_name ?? ""}`.trim() || username;
 
-    // Generate a username.
-    const baseUsername =
-      (typeof clerkUsername === "string"
-        ? clerkUsername.trim()
-        : "") ||
-      email.split("@")[0] ||
-      `user_${id.slice(-6)}`;
+    await User.create({
+      _id: id,
+      email: email,
+      full_name: full_name,
+      username: username,
+      profile_picture: image_url || "",
+    });
 
-    let username = baseUsername;
-    let suffix = 1;
-
-    // Ensure username is unique.
-    while (
-      await User.exists({
-        username,
-        _id: { $ne: id },
-      })
-    ) {
-      username = `${baseUsername}${suffix}`;
-      suffix++;
-    }
-
-    // Create or update the user, safely handling event replays.
-    await User.findOneAndUpdate(
-      { _id: id },
-      {
-        $set: {
-          email,
-          full_name,
-          username,
-          profile_picture: image_url || "",
-        },
-      },
-      {
-        upsert: true,
-        new: true,
-        runValidators: true,
-        setDefaultsOnInsert: true,
-      }
-    );
-
-    console.log(
-      `StoryGram user synchronized successfully: ${id}`
-    );
+    console.log(`User created successfully: ${id}`);
   }
 );
 
