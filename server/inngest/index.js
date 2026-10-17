@@ -4,6 +4,11 @@ import Connection from "../models/Connection.js";
 import sendEmail from "../configs/nodeMailer.js";
 
 // Create Inngest client
+export const inngest = new Inngest({
+  id: "storygram-app",
+});
+
+// Create Inngest client
 const syncUserCreation = inngest.createFunction(
   {
     id: "sync-user-from-clerk",
