@@ -11,6 +11,7 @@ export const inngest = new Inngest({
 // =========================
 // Sync User Creation
 // =========================
+
 const syncUserCreation = inngest.createFunction(
   {
     id: "sync-user-from-clerk",
@@ -21,32 +22,93 @@ const syncUserCreation = inngest.createFunction(
       id,
       first_name,
       last_name,
-      email_addresses,
+      username: clerkUsername,
+      email_addresses = [],
+      primary_email_address_id,
       image_url,
     } = event.data;
 
-    let username = email_addresses[0].email_address.split("@")[0];
+    // Find the primary email address.
+    const email =
+      email_addresses.find(
+        (item) => item.id === primary_email_address_id
+      )?.email_address ||
+      email_addresses[0]?.email_address;
 
-    // Check if username already exists
-    const existingUser = await User.findOne({ username });
-
-    if (existingUser) {
-      username += Math.floor(Math.random() * 10000);
+    if (!id || !email) {
+      throw new Error(
+        "Clerk user ID or email address is missing."
+      );
     }
 
-    await User.create({
-      _id: id,
-      email: email_addresses[0].email_address,
-      full_name: `${first_name ?? ""} ${last_name ?? ""}`.trim(),
-      profile_picture: image_url,
-      username,
-    });
+    // Ensure full_name is never empty.
+    const nameFromParts = [first_name, last_name]
+      .filter(
+        (part) => typeof part === "string" && part.trim()
+      )
+      .join(" ")
+      .trim();
+
+    const full_name =
+      nameFromParts ||
+      (typeof clerkUsername === "string"
+        ? clerkUsername.trim()
+        : "") ||
+      email.split("@")[0] ||
+      "StoryGram User";
+
+    // Generate a username.
+    const baseUsername =
+      (typeof clerkUsername === "string"
+        ? clerkUsername.trim()
+        : "") ||
+      email.split("@")[0] ||
+      `user_${id.slice(-6)}`;
+
+    let username = baseUsername;
+    let suffix = 1;
+
+    // Ensure username is unique.
+    while (
+      await User.exists({
+        username,
+        _id: { $ne: id },
+      })
+    ) {
+      username = `${baseUsername}${suffix}`;
+      suffix++;
+    }
+
+    // Create or update the user, safely handling event replays.
+    await User.findOneAndUpdate(
+      { _id: id },
+      {
+        $set: {
+          email,
+          full_name,
+          username,
+          profile_picture: image_url || "",
+        },
+      },
+      {
+        upsert: true,
+        new: true,
+        runValidators: true,
+        setDefaultsOnInsert: true,
+      }
+    );
+
+    console.log(
+      `StoryGram user synchronized successfully: ${id}`
+    );
   }
 );
+
 
 // =========================
 // Sync User Update
 // =========================
+
 const syncUserUpdation = inngest.createFunction(
   {
     id: "update-user-from-clerk",
@@ -57,17 +119,50 @@ const syncUserUpdation = inngest.createFunction(
       id,
       first_name,
       last_name,
-      email_addresses,
+      email_addresses = [],
+      primary_email_address_id,
       image_url,
     } = event.data;
 
-    await User.findByIdAndUpdate(id, {
-      email: email_addresses[0].email_address,
-      full_name: `${first_name ?? ""} ${last_name ?? ""}`.trim(),
-      profile_picture: image_url,
+    const email =
+      email_addresses.find(
+        (item) => item.id === primary_email_address_id
+      )?.email_address ||
+      email_addresses[0]?.email_address;
+
+    const nameFromParts = [first_name, last_name]
+      .filter(
+        (part) => typeof part === "string" && part.trim()
+      )
+      .join(" ")
+      .trim();
+
+    const updatedData = {};
+
+    if (email) {
+      updatedData.email = email;
+    }
+
+    // Don't replace an existing name with an empty string.
+    if (nameFromParts) {
+      updatedData.full_name = nameFromParts;
+    }
+
+    if (image_url !== undefined) {
+      updatedData.profile_picture = image_url || "";
+    }
+
+    await User.findByIdAndUpdate(id, updatedData, {
+      new: true,
+      runValidators: true,
     });
+
+    console.log(
+      `StoryGram user update processed: ${id}`
+    );
   }
 );
+
 
 // =========================
 // Sync User Delete
