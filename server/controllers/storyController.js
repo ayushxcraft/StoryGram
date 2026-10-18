@@ -8,17 +8,16 @@ import { inngest } from "../inngest/index.js";
 export const addUserStory = async (req, res) => {
     try {
         const { userId } = req.auth();
-        const {content, media_type, background_color} = req.body;
+        const { content, media_type, background_color } = req.body;
         const media = req.file
         let media_url = ''
 
         // upload media to imagekit
-        if(media_type === 'image' || media_type === 'video'){
-            const fileBuffer = fs.readFileSync(media.path)
-            const response = await imagekit.upload({
-                file: fileBuffer,
+        if (media_type === 'image' || media_type === 'video') {
+            const response = await imagekit.files.upload({
+                file: fs.createReadStream(media.path),
                 fileName: media.originalname,
-            })
+            });
             media_url = response.url
         }
 
@@ -34,14 +33,14 @@ export const addUserStory = async (req, res) => {
         // schedule story deletion after 24 hours
         await inngest.send({
             name: 'app/story.delete',
-            data: { storyId: story._id}
+            data: { storyId: story._id }
         })
 
-        res.json({success: true})
+        res.json({ success: true })
 
     } catch (error) {
         console.log(error);
-        res.json({ success: false, message: error.message});
+        res.json({ success: false, message: error.message });
     }
 }
 
@@ -55,12 +54,12 @@ export const getStories = async (req, res) => {
         const userIds = [userId, ...user.connections, ...user.following]
 
         const stories = await Story.find({
-            user: {$in: userIds}
+            user: { $in: userIds }
         }).populate('user').sort({ createdAt: -1 });
 
-        res.json({success: true, stories})
+        res.json({ success: true, stories })
     } catch (error) {
         console.log(error);
-        res.json({ success: false, message: error.message});
+        res.json({ success: false, message: error.message });
     }
 }
